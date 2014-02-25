@@ -149,3 +149,12 @@ $RECYCLE.BIN/
 
 # Mac crap
 .DS_Store
+
+# VC++
+vc/build/
+vc/imagecompress/Release/
+vc/imagecompress/*.opensdf
+vc/imagecompress/*.sdf
+vc/imagecompress/*.suo
+vc/imagecompress/*.opensdf
+vc/imagecompress/*.opensdf
