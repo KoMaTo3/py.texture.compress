@@ -13,6 +13,9 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="squish">
+      <UniqueIdentifier>{94d66eef-3eaa-4d56-bfac-0168acdc7425}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\module.cpp">
@@ -21,10 +24,94 @@
     <ClCompile Include="src\initmodule.cpp">
       <Filter>Файлы исходного кода</Filter>
     </ClCompile>
+    <ClCompile Include="src\filemanager.cpp">
+      <Filter>Файлы исходного кода</Filter>
+    </ClCompile>
+    <ClCompile Include="src\memory.cpp">
+      <Filter>Файлы исходного кода</Filter>
+    </ClCompile>
+    <ClCompile Include="src\squish\alpha.cpp">
+      <Filter>squish</Filter>
+    </ClCompile>
+    <ClCompile Include="src\squish\clusterfit.cpp">
+      <Filter>squish</Filter>
+    </ClCompile>
+    <ClCompile Include="src\squish\colourblock.cpp">
+      <Filter>squish</Filter>
+    </ClCompile>
+    <ClCompile Include="src\squish\colourfit.cpp">
+      <Filter>squish</Filter>
+    </ClCompile>
+    <ClCompile Include="src\squish\colourset.cpp">
+      <Filter>squish</Filter>
+    </ClCompile>
+    <ClCompile Include="src\squish\maths.cpp">
+      <Filter>squish</Filter>
+    </ClCompile>
+    <ClCompile Include="src\squish\rangefit.cpp">
+      <Filter>squish</Filter>
+    </ClCompile>
+    <ClCompile Include="src\squish\singlecolourfit.cpp">
+      <Filter>squish</Filter>
+    </ClCompile>
+    <ClCompile Include="src\squish\squish.cpp">
+      <Filter>squish</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\module.h">
       <Filter>Заголовочные файлы</Filter>
+    </ClInclude>
+    <ClInclude Include="src\filemanager.h">
+      <Filter>Заголовочные файлы</Filter>
+    </ClInclude>
+    <ClInclude Include="src\memory.h">
+      <Filter>Заголовочные файлы</Filter>
+    </ClInclude>
+    <ClInclude Include="src\tools.h">
+      <Filter>Заголовочные файлы</Filter>
+    </ClInclude>
+    <ClInclude Include="src\squish\alpha.h">
+      <Filter>squish</Filter>
+    </ClInclude>
+    <ClInclude Include="src\squish\clusterfit.h">
+      <Filter>squish</Filter>
+    </ClInclude>
+    <ClInclude Include="src\squish\colourblock.h">
+      <Filter>squish</Filter>
+    </ClInclude>
+    <ClInclude Include="src\squish\colourfit.h">
+      <Filter>squish</Filter>
+    </ClInclude>
+    <ClInclude Include="src\squish\colourset.h">
+      <Filter>squish</Filter>
+    </ClInclude>
+    <ClInclude Include="src\squish\config.h">
+      <Filter>squish</Filter>
+    </ClInclude>
+    <ClInclude Include="src\squish\maths.h">
+      <Filter>squish</Filter>
+    </ClInclude>
+    <ClInclude Include="src\squish\rangefit.h">
+      <Filter>squish</Filter>
+    </ClInclude>
+    <ClInclude Include="src\squish\simd.h">
+      <Filter>squish</Filter>
+    </ClInclude>
+    <ClInclude Include="src\squish\simd_float.h">
+      <Filter>squish</Filter>
+    </ClInclude>
+    <ClInclude Include="src\squish\simd_sse.h">
+      <Filter>squish</Filter>
+    </ClInclude>
+    <ClInclude Include="src\squish\simd_ve.h">
+      <Filter>squish</Filter>
+    </ClInclude>
+    <ClInclude Include="src\squish\singlecolourfit.h">
+      <Filter>squish</Filter>
+    </ClInclude>
+    <ClInclude Include="src\squish\squish.h">
+      <Filter>squish</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
