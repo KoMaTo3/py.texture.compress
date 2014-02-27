@@ -34,9 +34,9 @@ PyObject* Module::tga2rgba( PyObject *self, PyObject *args ) {
     return NULL;
   }
 
-  Memory memory, *imageDataRGBA = new Memory;
+  Memory memory, imageDataRGBA;
   fileManager.GetFile( fileName, memory );
-  Module::memoryBlocksList.push_back( imageDataRGBA );
+  //Module::memoryBlocksList.push_back( imageDataRGBA );
 
   //decode
   if( !memory.GetLength() ) {
@@ -72,8 +72,8 @@ PyObject* Module::tga2rgba( PyObject *self, PyObject *args ) {
   size_t src_pos = 18 + idLength;
 
   isTransparent = false;
-  imageDataRGBA->Alloc( width * height * 4 );
-  unsigned char *dest = imageDataRGBA->GetData();
+  imageDataRGBA.Alloc( width * height * 4 );
+  unsigned char *dest = imageDataRGBA.GetData();
 
   if( compressed == 2 ) { //not compressed
     size_t x, y;
@@ -158,5 +158,13 @@ PyObject* Module::tga2rgba( PyObject *self, PyObject *args ) {
     }//while y < height
   }//RLE-compression
 
-  return Py_BuildValue( "{s:y#,s:i,s:i,s:i}", "data", imageDataRGBA->GetData(), imageDataRGBA->GetLength(), "width", width, "height", height, "length", imageDataRGBA->GetLength() );
+  return Py_BuildValue( "{s:y#,s:i,s:i,s:i}", "data", imageDataRGBA.GetData(), imageDataRGBA.GetLength(), "width", width, "height", height, "length", imageDataRGBA.GetLength() );
 }//tga2rgba
+
+PyObject* Module::free( PyObject *self, PyObject *args ) {
+  for( auto& memory: Module::memoryBlocksList ) {
+    delete memory;
+  }
+  Module::memoryBlocksList.clear();
+  return Py_BuildValue( "i", 1 );
+}//free
