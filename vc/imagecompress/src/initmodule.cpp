@@ -9,6 +9,7 @@ struct moduleState {
 static PyMethodDef ModuleMethods[] = {
   { "func123",  Module::Func123, METH_VARARGS, "Module test function" },
   { "tga2rgba",  Module::tga2rgba, METH_VARARGS, "Decode TGA file to RGBA" },
+  { "rgba2dxt1",  Module::rgba2dxt1, METH_VARARGS, "Compress RGBA data as DXT1" },
   { "free",  Module::free, METH_VARARGS, "Free reserved module memory" },
   { NULL, NULL, 0, NULL }
 };

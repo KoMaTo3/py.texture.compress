@@ -168,3 +168,48 @@ PyObject* Module::free( PyObject *self, PyObject *args ) {
   Module::memoryBlocksList.clear();
   return Py_BuildValue( "i", 1 );
 }//free
+
+PyObject* Module::rgba2dxt1( PyObject *self, PyObject *args ) {
+  size_t
+    width = 0,
+    height = 0;
+  Memory rgbaData;
+
+  PyObject *parameters;
+  if( !PyArg_ParseTuple( args, "O!", &PyDict_Type, &parameters ) ) {
+    LOGE( "rgba2dxt1 => need dict as first parameter" );
+    return NULL;
+  }
+  PyObject *items = PyDict_Items( parameters );
+  PyObject *keys = PyDict_Keys( parameters );
+
+  auto size = PyList_Size( items );
+  for( int q = 0; q < size; ++q ) {
+    PyObject *key = PyList_GetItem( keys, q );
+    PyObject *item = PyList_GetItem( items, q );
+    std::string name = PyBytes_AsString( PyUnicode_AsASCIIString( key ) );
+    if( name == "width" ) {
+      auto widthItem = PyTuple_GetItem( item, 1 );
+      width = PyLong_AsLong( widthItem );
+    } else if( name == "height" ) {
+      auto heightItem = PyTuple_GetItem( item, 1 );
+      height = PyLong_AsLong( heightItem );
+    } else if( name == "data" ) {
+      PyObject *bytes = PyTuple_GetItem( item, 1 );
+      size_t length = PyBytes_Size( bytes );
+      rgbaData.Alloc( length );
+      memcpy( rgbaData.GetData(), PyBytes_AsString( bytes ), rgbaData.GetLength() );
+    }
+  }
+  LOGI( "image size[%dx%d] length[%d]", width, height, rgbaData.GetLength() );
+  if( width % 4 || height % 4 ) {
+    LOGE( "Bad image size[%dx%d]: must be multiplies by 4", width, height );
+    return NULL;
+  }
+
+  Memory
+    imageDataDXT( width * height >> 1 );
+
+  //return Py_BuildValue( "i", 1 );
+  return Py_BuildValue( "{s:y#,s:i,s:i,s:i}", "data", imageDataDXT.GetData(), imageDataDXT.GetLength(), "width", width, "height", height, "length", imageDataDXT.GetLength() );
+}//rgba2dxt1
