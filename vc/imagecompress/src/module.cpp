@@ -169,12 +169,7 @@ PyObject* Module::free( PyObject *self, PyObject *args ) {
   return Py_BuildValue( "i", 1 );
 }//free
 
-PyObject* Module::rgba2dxt1( PyObject *self, PyObject *args ) {
-  size_t
-    width = 0,
-    height = 0;
-  Memory rgbaData;
-
+bool Module::GetImageFromArguments( PyObject *args, size_t M_OUT &width, size_t M_OUT &height, Memory M_OUT &rgbaData ) {
   PyObject *parameters;
   if( !PyArg_ParseTuple( args, "O!", &PyDict_Type, &parameters ) ) {
     LOGE( "rgba2dxt1 => need dict as first parameter" );
@@ -182,6 +177,9 @@ PyObject* Module::rgba2dxt1( PyObject *self, PyObject *args ) {
   }
   PyObject *items = PyDict_Items( parameters );
   PyObject *keys = PyDict_Keys( parameters );
+  rgbaData.Free();
+  width = 0;
+  height = 0;
 
   auto size = PyList_Size( items );
   for( int q = 0; q < size; ++q ) {
@@ -201,15 +199,52 @@ PyObject* Module::rgba2dxt1( PyObject *self, PyObject *args ) {
       memcpy( rgbaData.GetData(), PyBytes_AsString( bytes ), rgbaData.GetLength() );
     }
   }
-  LOGI( "image size[%dx%d] length[%d]", width, height, rgbaData.GetLength() );
-  if( width % 4 || height % 4 ) {
-    LOGE( "Bad image size[%dx%d]: must be multiplies by 4", width, height );
-    return NULL;
+
+  return width && height && rgbaData.GetLength();
+}//GetImageFromArguments
+
+
+PyObject* Module::rgba2dxt1( PyObject *self, PyObject *args ) {
+  return Module::DoDXTCompressFromArgs( args, squish::kDxt1 );
+}//rgba2dxt1
+
+
+PyObject* Module::rgba2dxt3( PyObject *self, PyObject *args ) {
+  return Module::DoDXTCompressFromArgs( args, squish::kDxt3 );
+}//rgba2dxt3
+
+
+PyObject* Module::rgba2dxt5( PyObject *self, PyObject *args ) {
+  return Module::DoDXTCompressFromArgs( args, squish::kDxt5 );
+}//rgba2dxt5
+
+
+PyObject* Module::DoDXTCompressFromArgs( PyObject* M_IN args, int format ) {
+  Memory compressedData;
+  size_t
+    width = 0,
+    height = 0;
+  if( Module::CompressSquish( args, compressedData, width, height, format ) ) {
+    return Py_BuildValue( "{s:y#,s:i,s:i,s:i}", "data", compressedData.GetData(), compressedData.GetLength(), "width", width, "height", height, "length", compressedData.GetLength() );
   }
 
-  Memory
-    imageDataDXT( width * height >> 1 );
+  return Py_BuildValue( "i", 0 );
+}//DoDXTCompressFromArgs
 
-  //return Py_BuildValue( "i", 1 );
-  return Py_BuildValue( "{s:y#,s:i,s:i,s:i}", "data", imageDataDXT.GetData(), imageDataDXT.GetLength(), "width", width, "height", height, "length", imageDataDXT.GetLength() );
-}//rgba2dxt1
+
+bool Module::CompressSquish( PyObject* M_IN args, Memory M_OUT &compressedData, size_t M_OUT &width, size_t M_OUT &height, int format ) {
+  Memory rgbaData;
+  GetImageFromArguments( args, width, height, rgbaData );
+  //LOGI( "image size[%dx%d] length[%d]", width, height, rgbaData.GetLength() );
+
+  if( width % 4 || height % 4 ) {
+    LOGE( "Bad image size[%dx%d]: must be multiplies by 4", width, height );
+    return false;
+  }
+
+  const size_t resultSize = squish::GetStorageRequirements( width, height, format );
+  compressedData.Alloc( resultSize );
+  squish::CompressImage( rgbaData.GetData(), width, height, compressedData.GetData(), format );
+
+  return true;
+}//CompressSquish
