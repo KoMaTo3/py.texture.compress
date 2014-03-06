@@ -19,3 +19,5 @@ imageRGBA = dict(
     data = RGBAbyteData, #bytes = 'RGBARGBARGBA...RGBA'
 )
 ```
+
+*NOTE: c++ code contains jpeglib, pnglib, zlib source-code.*
