@@ -9,6 +9,8 @@ struct moduleState {
 static PyMethodDef ModuleMethods[] = {
   { "func123",  Module::Func123, METH_VARARGS, "Module test function" },
   { "tga2rgba",  Module::tga2rgba, METH_VARARGS, "Decode TGA file to RGBA" },
+  { "jpg2rgba",  Module::jpg2rgba, METH_VARARGS, "Decode JPG file to RGBA (alpha = 255)" },
+  { "png2rgba",  Module::png2rgba, METH_VARARGS, "Decode PNG file to RGBA" },
   { "rgba2dxt1",  Module::rgba2dxt1, METH_VARARGS, "Compress RGBA data as DXT1" },
   { "rgba2dxt3",  Module::rgba2dxt3, METH_VARARGS, "Compress RGBA data as DXT3" },
   { "rgba2dxt5",  Module::rgba2dxt5, METH_VARARGS, "Compress RGBA data as DXT5" },

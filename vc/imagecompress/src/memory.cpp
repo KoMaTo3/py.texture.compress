@@ -9,7 +9,8 @@ Memory::~Memory() {
   this->Free();
 }
 
-Memory::Memory( size_t setLength ) {
+Memory::Memory( size_t setLength )
+:length( 0 ) {
   this->Alloc( setLength );
 }
 
