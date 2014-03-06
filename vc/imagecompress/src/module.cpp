@@ -232,7 +232,90 @@ PyObject* Module::png2rgba( PyObject *self, PyObject *args ) {
   }
 
   return Py_BuildValue( "{s:y#,s:i,s:i,s:i}", "data", imageDataRGBA.GetData(), imageDataRGBA.GetLength(), "width", width, "height", height, "length", imageDataRGBA.GetLength() );
-}
+}//png2rgba
+
+
+PyObject* Module::bmp2rgba( PyObject *self, PyObject *args ) {
+  const char *fileName;
+  if( !PyArg_ParseTuple( args, "s", &fileName ) ) {
+    LOGE( "fileName is NULL" );
+    return NULL;
+  }
+  size_t
+    width = 0,
+    height = 0;
+  bool isTransparent = false;
+
+  FileManagerType fileManager;
+  if( !fileManager.FileExists( fileName ) ) {
+    LOGE( "File '%s' not fount", fileName );
+    return NULL;
+  }
+
+  Memory memory, imageDataRGBA;
+  fileManager.GetFile( fileName, memory );
+
+  //decode
+  ImageType_BMP_FileHeader *fileHeader;
+  ImageType_BMP_InfoHeader *infoHeader;
+  size_t x, y;
+  size_t srcPos, destPos;
+
+  if( memory.GetLength() < sizeof( ImageType_BMP_FileHeader ) + sizeof( ImageType_BMP_InfoHeader ) ) {
+    LOGE( "ImageLoader::LoadBMP => data too short" );
+      return NULL;
+  }
+
+  uint8_t *data = memory.GetData();
+  fileHeader = (ImageType_BMP_FileHeader*) data;
+  infoHeader = (ImageType_BMP_InfoHeader*) ( data + sizeof( ImageType_BMP_FileHeader ) );
+
+  width = infoHeader->biWidth;
+  height = infoHeader->biHeight;
+  imageDataRGBA.Alloc( width * height * 4 );
+
+  uint32_t *dataDest = ( uint32_t* ) imageDataRGBA.GetData();
+  switch( infoHeader->biBitCount )
+  {
+    case 24: {
+      for( y = 0; y < height; ++y ) {
+        for( x = 0; x < width; ++x ) {
+          destPos = ( height - y - 1 ) * width + x;
+          srcPos  = fileHeader->bfOffBits + (y * width + x) * 3;
+          dataDest[ destPos ] = COLOR_ARGB(
+              0xFF,
+              data[ srcPos + 0 ],
+              data[ srcPos + 1 ],
+              data[ srcPos + 2 ]
+          );
+        }//x
+      }
+    }
+    break;
+    case 32: {
+      for( y = 0; y < height; ++y ) {
+        for( x = 0; x < width; ++x ) {
+          destPos = ( height - y - 1 ) * width + x;
+          srcPos  = fileHeader->bfOffBits + (y * width + x) * 4;
+          dataDest[ destPos ] = COLOR_ARGB(
+              data[ srcPos + 4 ], //255
+              data[ srcPos + 0 ],
+              data[ srcPos + 1 ],
+              data[ srcPos + 2 ]
+          );
+        }
+      }
+    }
+    break;
+    default:
+      LOGE( "BMP Failed: bpp %d", infoHeader->biBitCount );
+      return NULL;
+    break;
+  }//switch
+
+  return Py_BuildValue( "{s:y#,s:i,s:i,s:i}", "data", imageDataRGBA.GetData(), imageDataRGBA.GetLength(), "width", width, "height", height, "length", imageDataRGBA.GetLength() );
+}//bmp2rgba
+
 
 PyObject* Module::tga2rgba( PyObject *self, PyObject *args ) {
   const char *fileName;

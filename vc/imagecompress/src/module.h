@@ -25,6 +25,8 @@ public:
   static PyObject* tga2rgba( PyObject *self, PyObject *args );
   static PyObject* jpg2rgba( PyObject *self, PyObject *args );
   static PyObject* png2rgba( PyObject *self, PyObject *args );
+  static PyObject* bmp2rgba( PyObject *self, PyObject *args );
+
   static PyObject* rgba2dxt1( PyObject *self, PyObject *args );
   static PyObject* rgba2dxt3( PyObject *self, PyObject *args );
   static PyObject* rgba2dxt5( PyObject *self, PyObject *args );
@@ -69,3 +71,29 @@ public:
   static void PNGReadFunctiongMemoryReader( png_structp png_ptr, png_bytep data, png_size_t length );
 
 };
+
+#pragma pack(2)
+
+struct ImageType_BMP_FileHeader {
+  uint16_t        bfType;
+  uint32_t        bfSize;
+  uint16_t        bfReserved1;
+  uint16_t        bfReserved2;
+  uint32_t        bfOffBits;
+};
+
+struct ImageType_BMP_InfoHeader {
+  uint32_t        biSize;
+  int32_t         biWidth;
+  int32_t         biHeight;
+  uint16_t        biPlanes;
+  uint16_t        biBitCount;
+  uint32_t        biCompression;
+  uint32_t        biSizeImage;
+  int32_t         biXPelsPerMeter;
+  int32_t         biYPelsPerMeter;
+  uint32_t        biClrUsed;
+  uint32_t        biClrImportant;
+};
+
+#pragma pack()
