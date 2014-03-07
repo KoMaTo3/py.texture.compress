@@ -3,7 +3,9 @@ py.texture.compress
 
 C++ python module for converting images to DDS with compression (<code>DXT1</code>/<code>DXT3</code>/<code>DXT5</code>)
 
-Can decode to RGBA-bytes: <code>tga</code>, <code>jpg</code>, <code>png</code>
+Released: version 1.0
+
+Can decode to RGBA-bytes: <code>tga</code>, <code>jpg</code>, <code>png</code>, <code>bmp</code> (24/32bpp)
 
 Example:
 ```python
