@@ -4,20 +4,126 @@
 #include "filemanager.h"
 #include "tools.h"
 #include "squish.h"
+#include <vector>
 
 Module::MemoryList Module::memoryBlocksList;
+std::map< std::string, int > Module::formatList;
+bool Module::isInitialized = false;
 
-PyObject* Module::Func123( PyObject *self, PyObject *args ) {
-  const char *fileName;
-  if( !PyArg_ParseTuple( args, "s", &fileName ) ) {
-    LOGE( "fileName is NULL" );
+
+void Module::InitModule() {
+  if( Module::isInitialized ) {
+    return;
+  }
+
+  formatList.insert( std::make_pair( "dxt1", squish::kDxt1 ) );
+  formatList.insert( std::make_pair( "dxt3", squish::kDxt3 ) );
+  formatList.insert( std::make_pair( "dxt5", squish::kDxt5 ) );
+}//InitModule
+
+
+PyObject* Module::supportedFormats( PyObject *self, PyObject *args ) {
+  Module::InitModule();
+  return Py_BuildValue( "[s,s,s,s]", "bmp", "tga", "jpg", "png" );
+}//supportedFormats
+
+
+PyObject* Module::picture2dxt( PyObject *self, PyObject *args ) {
+  Module::InitModule();
+  size_t width, height;
+  bool isTransparent;
+  Memory fileData, imageDataRGBA, imageDataDXT;
+
+  char *fileName, *format;
+  if( !PyArg_ParseTuple( args, "ss", &fileName, &format ) ) {
+    LOGE( "picture2dxt => bad parameters, need: '/path/to/file/name', 'format'" );
     return NULL;
   }
 
-  return Py_BuildValue( "i", strlen( fileName ) );
-}//Func123
+  FileManagerType fileManager;
+  if( !fileManager.FileExists( fileName ) ) {
+    LOGE( "File '%s' not fount", fileName );
+    return NULL;
+  }
+  fileManager.GetFile( fileName, fileData );
 
-PyObject* Module::jpg2rgba( PyObject *self, PyObject *args ) {
+  decodeFuncHandlerType *decodeFuncHandler = NULL;
+
+  auto imageType = Module::GetImageType( fileData );
+  switch( imageType ) {
+  case MODULE_IMAGE_TYPE_BMP:
+    decodeFuncHandler = Module::DecodeBMP;
+    break;
+  case MODULE_IMAGE_TYPE_TGA:
+    decodeFuncHandler = Module::DecodeTGA;
+    break;
+  case MODULE_IMAGE_TYPE_JPG:
+    decodeFuncHandler = Module::DecodeJPG;
+    break;
+  case MODULE_IMAGE_TYPE_PNG:
+    decodeFuncHandler = Module::DecodePNG;
+    break;
+  default:
+    LOGE( "Unknown format" );
+    return NULL;
+  }
+
+  if( !decodeFuncHandler || !decodeFuncHandler( fileData, imageDataRGBA, isTransparent, width, height ) ) {
+    return NULL;
+  }
+
+  auto formatRes = formatList.find( format );
+  if( formatRes == formatList.end() ) {
+    LOGE( "Unknown format '%s'", format );
+    return NULL;
+  }
+
+  Module::EncodeDXT( imageDataRGBA, width, height, imageDataDXT, formatRes->second );
+  return Py_BuildValue( "{s:y#,s:i,s:i,s:i}", "data", imageDataDXT.GetData(), imageDataDXT.GetLength(), "width", width, "height", height, "length", imageDataDXT.GetLength() );
+}//picture2dxt
+
+
+void Module::EncodeDXT( Memory &inBuffer, size_t width, size_t height, Memory &outBuffer, int dxtFormat ) {
+  const size_t resultSize = squish::GetStorageRequirements( width, height, dxtFormat );
+  outBuffer.Alloc( resultSize );
+  squish::CompressImage( inBuffer.GetData(), width, height, outBuffer.GetData(), dxtFormat );
+}//EncodeDXT
+
+
+MODULE_IMAGE_TYPES_LIST Module::GetImageType( Memory &memory ) {
+  uint8_t *data = memory.GetData();
+
+  if( memory.GetLength() >= 2 ) {
+    unsigned short *sign = ( unsigned short* ) data;
+    if( *sign == 0x4D42 ) { //BM
+      return MODULE_IMAGE_TYPE_BMP;
+    }
+  }
+  if( memory.GetLength() >= 3 ) {
+    unsigned short *sign = ( unsigned short* ) data;
+    if( *sign == 0 && (data[2] == 0x02 || data[2] == 0x0A) ) {
+      return MODULE_IMAGE_TYPE_TGA;
+    }
+  }
+  if( memory.GetLength() >= 4 ) {
+    uint32_t *sign = ( uint32_t* ) data;
+    if( *sign == 0x474E5089 ) { //0x89 PNG
+      return MODULE_IMAGE_TYPE_PNG;
+    }
+  }
+  if( memory.GetLength() >= 10 ) {
+    uint32_t *sign = ( uint32_t* ) ( data + 6 );
+    if( *sign == 0x4649464A ) { //JFIF
+      return MODULE_IMAGE_TYPE_JPG;
+    }
+  }
+
+  return MODULE_IMAGE_TYPE_UNKNOWN;
+}//GetImageType
+
+
+PyObject* Module::decode2rgba( PyObject *self, PyObject *args ) {
+  Module::InitModule();
   const char *fileName;
   if( !PyArg_ParseTuple( args, "s", &fileName ) ) {
     LOGE( "fileName is NULL" );
@@ -26,7 +132,6 @@ PyObject* Module::jpg2rgba( PyObject *self, PyObject *args ) {
   size_t
     width = 0,
     height = 0;
-  bool isTransparent = false;
 
   FileManagerType fileManager;
   if( !fileManager.FileExists( fileName ) ) {
@@ -35,17 +140,241 @@ PyObject* Module::jpg2rgba( PyObject *self, PyObject *args ) {
   }
 
   Memory memory, imageDataRGBA;
+  bool isTransparent;
   fileManager.GetFile( fileName, memory );
 
-  //decode
+  if( !memory.GetLength() ) {
+    LOGE( "[Error] file is too short" );
+    return NULL;
+  }
+
+  decodeFuncHandlerType *decodeFuncHandler = NULL;
+
+  auto imageType = Module::GetImageType( memory );
+  switch( imageType ) {
+  case MODULE_IMAGE_TYPE_BMP:
+    decodeFuncHandler = Module::DecodeBMP;
+    break;
+  case MODULE_IMAGE_TYPE_TGA:
+    decodeFuncHandler = Module::DecodeTGA;
+    break;
+  case MODULE_IMAGE_TYPE_JPG:
+    decodeFuncHandler = Module::DecodeJPG;
+    break;
+  case MODULE_IMAGE_TYPE_PNG:
+    decodeFuncHandler = Module::DecodePNG;
+    break;
+  default:
+    LOGE( "Unknown format" );
+    return NULL;
+  }
+
+  if( decodeFuncHandler ) {
+    if( decodeFuncHandler( memory, imageDataRGBA, isTransparent, width, height ) ) {
+      return Py_BuildValue( "{s:y#,s:i,s:i,s:i}", "data", imageDataRGBA.GetData(), imageDataRGBA.GetLength(), "width", width, "height", height, "length", imageDataRGBA.GetLength() );
+    }
+  } else {
+    return NULL;
+  }
+
+  return NULL;
+}//decode2rgba
+
+
+bool Module::DecodeBMP( Memory &inBuffer, Memory &outBuffer, bool &isTransparent, size_t &outWidth, size_t &outHeight ) {
+  ImageType_BMP_FileHeader *fileHeader;
+  ImageType_BMP_InfoHeader *infoHeader;
+  size_t x, y;
+  size_t srcPos, destPos;
+  isTransparent = false;
+
+  if( inBuffer.GetLength() < sizeof( ImageType_BMP_FileHeader ) + sizeof( ImageType_BMP_InfoHeader ) ) {
+    LOGE( "ImageLoader::LoadBMP => data too short" );
+      return NULL;
+  }
+
+  uint8_t *data = inBuffer.GetData();
+  fileHeader = (ImageType_BMP_FileHeader*) data;
+  infoHeader = (ImageType_BMP_InfoHeader*) ( data + sizeof( ImageType_BMP_FileHeader ) );
+
+  outWidth = infoHeader->biWidth;
+  outHeight = infoHeader->biHeight;
+  outBuffer.Alloc( outWidth * outHeight * 4 );
+
+  uint32_t *dataDest = ( uint32_t* ) outBuffer.GetData();
+  switch( infoHeader->biBitCount )
+  {
+    case 24: {
+      for( y = 0; y < outHeight; ++y ) {
+        for( x = 0; x < outWidth; ++x ) {
+          destPos = ( outHeight - y - 1 ) * outWidth + x;
+          srcPos  = fileHeader->bfOffBits + (y * outWidth + x) * 3;
+          dataDest[ destPos ] = COLOR_ARGB(
+              0xFF,
+              data[ srcPos + 0 ],
+              data[ srcPos + 1 ],
+              data[ srcPos + 2 ]
+          );
+        }//x
+      }
+    }
+    break;
+    case 32: {
+      for( y = 0; y < outHeight; ++y ) {
+        for( x = 0; x < outWidth; ++x ) {
+          destPos = ( outHeight - y - 1 ) * outWidth + x;
+          srcPos  = fileHeader->bfOffBits + (y * outWidth + x) * 4;
+          dataDest[ destPos ] = COLOR_ARGB(
+              data[ srcPos + 4 ], //255
+              data[ srcPos + 0 ],
+              data[ srcPos + 1 ],
+              data[ srcPos + 2 ]
+          );
+        }
+      }
+    }
+    break;
+    default:
+      LOGE( "BMP Failed: bpp %d", infoHeader->biBitCount );
+      return false;
+    break;
+  }//switch
+
+  return true;
+}//DecodeBMP
+
+
+bool Module::DecodeTGA( Memory &inBuffer, Memory &outBuffer, bool &isTransparent, size_t &outWidth, size_t &outHeight ) {
+  if( !inBuffer.GetLength() ) {
+    LOGE( "No data or file too short" );
+    return false;
+  }
+
+  unsigned char *data = inBuffer.GetData();
+  unsigned char idLength = data[ 0 ];
+  if( data[ 1 ] ) {
+    LOGE( "ImageLoader::LoadTGA => idLength" );
+    return false;
+  }
+
+  unsigned char compressed = data[ 2 ]; //RLE-compression
+  if( !( compressed == 2 || compressed == 0x0A ) ) {
+    LOGE( "ImageLoader::LoadTGA => unknown compression" );
+    return false;
+  }
+
+  unsigned short
+    *w = ( unsigned short* ) ( data + 12 ),
+    *h = ( unsigned short* ) ( data + 14 );
+  outWidth = *w;
+  outHeight = *h;
+
+  unsigned char bpp = data[ 16 ];
+  if( !( bpp == 24 || bpp == 32 ) ) {
+    LOGE( "ImageLoader::LoadTGA => unknown bpp[%d]", bpp );
+    return false;
+  }
+
+  size_t src_pos = 18 + idLength;
+
+  isTransparent = false;
+  outBuffer.Alloc( outWidth * outHeight * 4 );
+  unsigned char *dest = outBuffer.GetData();
+
+  if( compressed == 2 ) { //not compressed
+    size_t x, y;
+    unsigned char mult = bpp >> 3;
+    for( y = 0; y < outHeight; y++) {
+      for( x = 0; x < outWidth; x++) {
+        size_t dest_pos = ( x + y * outWidth ) << 2;
+        src_pos  = ( x + y * outWidth ) * mult + 18;
+        dest[ dest_pos     ] = data[ src_pos + 2 ];
+        dest[ dest_pos + 1 ] = data[ src_pos + 1 ];
+        dest[ dest_pos + 2 ] = data[ src_pos + 0 ];
+        dest[ dest_pos + 3 ] = ( bpp == 32 ? data[ src_pos + 3 ] : 255);
+        if( bpp == 32 && data[ src_pos + 3 ] != 0xFF ) {
+          isTransparent = true;
+        }
+      }//x
+    }//y
+  } else { //RLE-compression 0x0A
+    size_t src_pos = 18 + idLength, dest_pos = 0;
+    unsigned char q;
+    unsigned char r, g, b, a = 255;
+    size_t x = 0, y = 0;
+    while( y < outHeight ) {
+      unsigned char block = data[ src_pos++ ];
+      unsigned char num = block & 127;
+
+      if( block & 128 ) { //compressed block
+        b = data[ src_pos ];
+        g = data[ src_pos + 1 ];
+        r = data[ src_pos + 2 ];
+        if( bpp == 32 ) {
+          a = data[ src_pos + 3 ];
+          src_pos += 4;
+        } else {
+          src_pos += 3;
+        }
+        for( q = 0; q < num + 1; ++q ) {
+          dest_pos = ( x + y * outWidth ) << 2;
+          dest[ dest_pos ] = r;
+          dest[ dest_pos + 1 ] = g;
+          dest[ dest_pos + 2 ] = b;
+          dest[ dest_pos + 3 ] = a;
+          if( a != 0xFF ) {
+            isTransparent = true;
+          }
+
+          x = ( x + 1 ) % outWidth;
+          if( !x ) {
+            ++y;
+          }
+        }
+      } else { //not compressed block
+        for( q = 0; q < num + 1; ++q ) {
+          dest_pos = ( x + y * outWidth ) << 2;
+          b = data[ src_pos ];
+          g = data[ src_pos + 1 ];
+          r = data[ src_pos + 2 ];
+          if( bpp == 32 ) {
+            a = data[ src_pos + 3 ];
+            src_pos += 4;
+          } else {
+            src_pos += 3;
+          }
+
+          dest[ dest_pos ] = r;
+          dest[ dest_pos + 1 ] = g;
+          dest[ dest_pos + 2 ] = b;
+          dest[ dest_pos + 3 ] = a;
+          if( a != 0xFF ) {
+            isTransparent = true;
+          }
+
+          x = ( x + 1 ) % outWidth;
+          if( !x ) {
+            ++y;
+          }
+        }//for q < num
+      }//not compressed block
+    }//while y < outHeight
+  }//RLE-compression
+
+  return true;
+}//DecodeTGA
+
+
+bool Module::DecodeJPG( Memory &inBuffer, Memory &outBuffer, bool &isTransparent, size_t &outWidth, size_t &outHeight ) {
+  isTransparent = false;
   jpeg_decompress_struct	    cinfo;
   ImgJpg::_gImporterJPEGError	jerr;
 
   MemoryReader file;
-  file.SetSource( memory.GetData(), memory.GetLength() );
+  file.SetSource( inBuffer.GetData(), inBuffer.GetLength() );
 
-  cinfo.err = jpeg_std_error( &jerr.pub );		  // устанавливаем дефолтный менеджер обработки ошибок
-  jerr.pub.error_exit = ImgJpg::JPEGErrorExit;	// присваиваем дефолтную функцию для обработки ошибки
+  cinfo.err = jpeg_std_error( &jerr.pub );
+  jerr.pub.error_exit = ImgJpg::JPEGErrorExit;
 
   if( setjmp(jerr.setjmp_buffer) )
   {
@@ -71,20 +400,19 @@ PyObject* Module::jpg2rgba( PyObject *self, PyObject *args ) {
 	  ++y;
   }
 
-  width = cinfo.image_width;
-  height = cinfo.image_height;
+  outWidth = cinfo.image_width;
+  outHeight = cinfo.image_height;
 
   {
     uint32_t x, y;
     int pos3b, pos4b;
-    imageDataRGBA.Alloc( height * width * 4 );
-    uint8_t *src_mem = (uint8_t*) temp_mem.GetData(), *dest_mem = (uint8_t*) imageDataRGBA.GetData();
-    for( y = 0; y < height; ++y )
-    for( x = 0; x < width; ++x )
+    outBuffer.Alloc( outHeight * outWidth * 4 );
+    uint8_t *src_mem = (uint8_t*) temp_mem.GetData(), *dest_mem = (uint8_t*) outBuffer.GetData();
+    for( y = 0; y < outHeight; ++y )
+    for( x = 0; x < outWidth; ++x )
     {
-      pos3b = ( x + y * width ) * 3;
-      //pos4b = ( x + ( /* height - y - 1 */ y ) * width ) * 4;
-      pos4b = ( x + ( height - y - 1 ) * width ) * 4;
+      pos3b = ( x + y * outWidth ) * 3;
+      pos4b = ( x + y * outWidth ) * 4;
       dest_mem[ pos4b    ] = src_mem[ pos3b + 0 ];
       dest_mem[ pos4b + 1] = src_mem[ pos3b + 1 ];
       dest_mem[ pos4b + 2] = src_mem[ pos3b + 2 ];
@@ -97,38 +425,18 @@ PyObject* Module::jpg2rgba( PyObject *self, PyObject *args ) {
   jpeg_destroy_decompress( &cinfo );
   file.Free();
 
-  return Py_BuildValue( "{s:y#,s:i,s:i,s:i}", "data", imageDataRGBA.GetData(), imageDataRGBA.GetLength(), "width", width, "height", height, "length", imageDataRGBA.GetLength() );
-}//jpg2rgba
+  return true;
+}//DecodeJPG
 
 
-PyObject* Module::png2rgba( PyObject *self, PyObject *args ) {
-  const char *fileName;
-  if( !PyArg_ParseTuple( args, "s", &fileName ) ) {
-    LOGE( "fileName is NULL" );
-    return NULL;
-  }
-  size_t
-    width = 0,
-    height = 0;
-  bool isTransparent = false;
-
-  FileManagerType fileManager;
-  if( !fileManager.FileExists( fileName ) ) {
-    LOGE( "File '%s' not fount", fileName );
-    return NULL;
-  }
-
-  Memory memory, imageDataRGBA;
-  fileManager.GetFile( fileName, memory );
-
-  //decode
+bool Module::DecodePNG( Memory &inBuffer, Memory &outBuffer, bool &isTransparent, size_t &outWidth, size_t &outHeight ) {
   png_structp   png_ptr;
   png_infop     info_ptr;
   png_uint_32   img_width = 0, img_height = 0;
   int           bit_depth = 0, color_type = 0, interlace_type = 0;
 
   MemoryReader memReader;
-  memReader.SetSource( memory.GetData(), memory.GetLength() );
+  memReader.SetSource( inBuffer.GetData(), inBuffer.GetLength() );
   Memory data_mem( 256 );
   char *pdata = ( char* ) data_mem.GetData();
 
@@ -151,15 +459,9 @@ PyObject* Module::png2rgba( PyObject *self, PyObject *args ) {
     return false;
   }
   memReader.SeekFromStart( 4 );
-  png_set_read_fn( png_ptr, ( void* ) &memReader, ImgPng::PNGReadFunctiongMemoryReader );//!!!
+  png_set_read_fn( png_ptr, ( void* ) &memReader, ImgPng::PNGReadFunctiongMemoryReader );
 
   png_set_sig_bytes( png_ptr, 4 );
-
-  // Тут можно настроить прогрессбар, таким макаром:
-  // описываем функцию где-то выше
-  // void read_row_callback(png_ptr, png_uint_32 row, int pass) { }
-  // информируем библиотеку об этой функции
-  //	png_set_read_status_fn(png_ptr, read_row_callback);
 
   png_read_info( png_ptr, info_ptr );
   png_get_IHDR( png_ptr, info_ptr, &img_width, &img_height, &bit_depth,
@@ -195,47 +497,103 @@ PyObject* Module::png2rgba( PyObject *self, PyObject *args ) {
   }
   memReader.Free();
 
-  width = img_width;
-  height = img_height;
-  imageDataRGBA.Alloc( width * height * 4 );
+  outWidth = img_width;
+  outHeight = img_height;
+  outBuffer.Alloc( outWidth * outHeight * 4 );
 
-  //__log.PrintInfo( Filelevel_DEBUG, "color_type = %d, interlace_type = %d", color_type, interlace_type );
-  if( color_type == PNG_COLOR_TYPE_RGB )  //2
-  {
+  if( color_type == PNG_COLOR_TYPE_RGB ) {
     uint32_t x, y, pos1, pos2;
-    Byte *dataDest = ( Byte* ) imageDataRGBA.GetData();
-    for( y = 0; y < height; ++y )
-    for( x = 0; x < width; ++x )
+    Byte *dataDest = ( Byte* ) outBuffer.GetData();
+    for( y = 0; y < outHeight; ++y )
+    for( x = 0; x < outWidth; ++x )
     {
       pos1 = x * 3 + row_bytes * y;
-      pos2 = ( x + y * width ) << 2;
+      pos2 = ( x + y * outWidth ) << 2;
       dataDest[ pos2     ] = pdata[ pos1 + 0 ];
       dataDest[ pos2 + 1 ] = pdata[ pos1 + 1 ];
       dataDest[ pos2 + 2 ] = pdata[ pos1 + 2 ];
       dataDest[ pos2 + 3 ] = 0xFF;
     }
+    isTransparent = false;
   }
   else
-  if( color_type == PNG_COLOR_TYPE_RGB_ALPHA )  //6
-  {
+  if( color_type == PNG_COLOR_TYPE_RGB_ALPHA ) {
     uint32_t x, y, pos;
-    Byte *dataDest = ( Byte* ) imageDataRGBA.GetData();
-    for( y = 0; y < height; ++y)
-    for( x = 0; x < width; ++x)
+    Byte *dataDest = ( Byte* ) outBuffer.GetData();
+    for( y = 0; y < outHeight; ++y)
+    for( x = 0; x < outWidth; ++x)
     {
-      pos = ( x + y * width ) << 2;
+      pos = ( x + y * outWidth ) << 2;
       dataDest[ pos     ] = pdata[ pos + 0 ];
       dataDest[ pos + 1 ] = pdata[ pos + 1 ];
       dataDest[ pos + 2 ] = pdata[ pos + 2 ];
       dataDest[ pos + 3 ] = pdata[ pos + 3 ];
+      if( pdata[ pos + 3 ] != 0xFF ) {
+        isTransparent = true;
+      }
     }
   }
+
+  return true;
+}//DecodePNG
+
+
+PyObject* Module::jpg2rgba( PyObject *self, PyObject *args ) {
+  Module::InitModule();
+  const char *fileName;
+  if( !PyArg_ParseTuple( args, "s", &fileName ) ) {
+    LOGE( "fileName is NULL" );
+    return NULL;
+  }
+  size_t
+    width = 0,
+    height = 0;
+  bool isTransparent = false;
+
+  FileManagerType fileManager;
+  if( !fileManager.FileExists( fileName ) ) {
+    LOGE( "File '%s' not fount", fileName );
+    return NULL;
+  }
+
+  Memory memory, imageDataRGBA;
+  fileManager.GetFile( fileName, memory );
+
+  Module::DecodeJPG( memory, imageDataRGBA, isTransparent, width, height );
+
+  return Py_BuildValue( "{s:y#,s:i,s:i,s:i}", "data", imageDataRGBA.GetData(), imageDataRGBA.GetLength(), "width", width, "height", height, "length", imageDataRGBA.GetLength() );
+}//jpg2rgba
+
+
+PyObject* Module::png2rgba( PyObject *self, PyObject *args ) {
+  Module::InitModule();
+  const char *fileName;
+  if( !PyArg_ParseTuple( args, "s", &fileName ) ) {
+    LOGE( "fileName is NULL" );
+    return NULL;
+  }
+  size_t
+    width = 0,
+    height = 0;
+  bool isTransparent = false;
+
+  FileManagerType fileManager;
+  if( !fileManager.FileExists( fileName ) ) {
+    LOGE( "File '%s' not fount", fileName );
+    return NULL;
+  }
+
+  Memory memory, imageDataRGBA;
+  fileManager.GetFile( fileName, memory );
+
+  Module::DecodePNG( memory, imageDataRGBA, isTransparent, width, height );
 
   return Py_BuildValue( "{s:y#,s:i,s:i,s:i}", "data", imageDataRGBA.GetData(), imageDataRGBA.GetLength(), "width", width, "height", height, "length", imageDataRGBA.GetLength() );
 }//png2rgba
 
 
 PyObject* Module::bmp2rgba( PyObject *self, PyObject *args ) {
+  Module::InitModule();
   const char *fileName;
   if( !PyArg_ParseTuple( args, "s", &fileName ) ) {
     LOGE( "fileName is NULL" );
@@ -255,69 +613,14 @@ PyObject* Module::bmp2rgba( PyObject *self, PyObject *args ) {
   Memory memory, imageDataRGBA;
   fileManager.GetFile( fileName, memory );
 
-  //decode
-  ImageType_BMP_FileHeader *fileHeader;
-  ImageType_BMP_InfoHeader *infoHeader;
-  size_t x, y;
-  size_t srcPos, destPos;
-
-  if( memory.GetLength() < sizeof( ImageType_BMP_FileHeader ) + sizeof( ImageType_BMP_InfoHeader ) ) {
-    LOGE( "ImageLoader::LoadBMP => data too short" );
-      return NULL;
-  }
-
-  uint8_t *data = memory.GetData();
-  fileHeader = (ImageType_BMP_FileHeader*) data;
-  infoHeader = (ImageType_BMP_InfoHeader*) ( data + sizeof( ImageType_BMP_FileHeader ) );
-
-  width = infoHeader->biWidth;
-  height = infoHeader->biHeight;
-  imageDataRGBA.Alloc( width * height * 4 );
-
-  uint32_t *dataDest = ( uint32_t* ) imageDataRGBA.GetData();
-  switch( infoHeader->biBitCount )
-  {
-    case 24: {
-      for( y = 0; y < height; ++y ) {
-        for( x = 0; x < width; ++x ) {
-          destPos = ( height - y - 1 ) * width + x;
-          srcPos  = fileHeader->bfOffBits + (y * width + x) * 3;
-          dataDest[ destPos ] = COLOR_ARGB(
-              0xFF,
-              data[ srcPos + 0 ],
-              data[ srcPos + 1 ],
-              data[ srcPos + 2 ]
-          );
-        }//x
-      }
-    }
-    break;
-    case 32: {
-      for( y = 0; y < height; ++y ) {
-        for( x = 0; x < width; ++x ) {
-          destPos = ( height - y - 1 ) * width + x;
-          srcPos  = fileHeader->bfOffBits + (y * width + x) * 4;
-          dataDest[ destPos ] = COLOR_ARGB(
-              data[ srcPos + 4 ], //255
-              data[ srcPos + 0 ],
-              data[ srcPos + 1 ],
-              data[ srcPos + 2 ]
-          );
-        }
-      }
-    }
-    break;
-    default:
-      LOGE( "BMP Failed: bpp %d", infoHeader->biBitCount );
-      return NULL;
-    break;
-  }//switch
+  Module::DecodeBMP( memory, imageDataRGBA, isTransparent, width, height );
 
   return Py_BuildValue( "{s:y#,s:i,s:i,s:i}", "data", imageDataRGBA.GetData(), imageDataRGBA.GetLength(), "width", width, "height", height, "length", imageDataRGBA.GetLength() );
 }//bmp2rgba
 
 
 PyObject* Module::tga2rgba( PyObject *self, PyObject *args ) {
+  Module::InitModule();
   const char *fileName;
   if( !PyArg_ParseTuple( args, "s", &fileName ) ) {
     LOGE( "fileName is NULL" );
@@ -337,130 +640,14 @@ PyObject* Module::tga2rgba( PyObject *self, PyObject *args ) {
   Memory memory, imageDataRGBA;
   fileManager.GetFile( fileName, memory );
 
-  //decode
-  if( !memory.GetLength() ) {
-    LOGE( "No data or file too short" );
-    return false;
-  }
-
-  unsigned char *data = memory.GetData();
-  unsigned char idLength = data[ 0 ];
-  if( data[ 1 ] ) {
-    LOGE( "ImageLoader::LoadTGA => idLength" );
-    return false;
-  }
-
-  unsigned char compressed = data[ 2 ]; //RLE-compression
-  if( !( compressed == 2 || compressed == 0x0A ) ) {
-    LOGE( "ImageLoader::LoadTGA => unknown compression" );
-    return false;
-  }
-
-  unsigned short
-    *w = ( unsigned short* ) ( data + 12 ),
-    *h = ( unsigned short* ) ( data + 14 );
-  width = *w;
-  height = *h;
-
-  unsigned char bpp = data[ 16 ];
-  if( !( bpp == 24 || bpp == 32 ) ) {
-    LOGE( "ImageLoader::LoadTGA => unknown bpp[%d]", bpp );
-    return false;
-  }
-
-  size_t src_pos = 18 + idLength;
-
-  isTransparent = false;
-  imageDataRGBA.Alloc( width * height * 4 );
-  unsigned char *dest = imageDataRGBA.GetData();
-
-  if( compressed == 2 ) { //not compressed
-    size_t x, y;
-    unsigned char mult = bpp >> 3;
-    for( y = 0; y < height; y++) {
-      for( x = 0; x < width; x++) {
-        size_t dest_pos = ( x + y * width ) << 2;
-        //dest_pos = ( x + ( height - y - 1 ) * width ) << 2;
-        src_pos  = ( x + y * width ) * mult + 18;
-        dest[ dest_pos     ] = data[ src_pos + 2 ];
-        dest[ dest_pos + 1 ] = data[ src_pos + 1 ];
-        dest[ dest_pos + 2 ] = data[ src_pos + 0 ];
-        dest[ dest_pos + 3 ] = ( bpp == 32 ? data[ src_pos + 3 ] : 255);
-        if( bpp == 32 && data[ src_pos + 3 ] != 0xFF ) {
-          isTransparent = true;
-        }
-      }//x
-    }//y
-  } else { //RLE-compression 0x0A
-    size_t src_pos = 18 + idLength, dest_pos = 0;
-    unsigned char q;
-    unsigned char r, g, b, a = 255;
-    size_t x = 0, y = 0;
-    while( y < height ) {
-      unsigned char block = data[ src_pos++ ];
-      unsigned char num = block & 127;
-
-      if( block & 128 ) { //compressed block
-        b = data[ src_pos ];
-        g = data[ src_pos + 1 ];
-        r = data[ src_pos + 2 ];
-        if( bpp == 32 ) {
-          a = data[ src_pos + 3 ];
-          src_pos += 4;
-        } else {
-          src_pos += 3;
-        }
-        for( q = 0; q < num + 1; ++q ) {
-          //dest_pos = ( x + y * width ) << 2;
-          dest_pos = ( x + ( height - y - 1 ) * width ) << 2;
-          dest[ dest_pos ] = r;
-          dest[ dest_pos + 1 ] = g;
-          dest[ dest_pos + 2 ] = b;
-          dest[ dest_pos + 3 ] = a;
-          if( a != 0xFF ) {
-            isTransparent = true;
-          }
-
-          x = ( x + 1 ) % width;
-          if( !x ) {
-            ++y;
-          }
-        }
-      } else { //not compressed block
-        for( q = 0; q < num + 1; ++q ) {
-          //dest_pos = ( x + y * width ) << 2;
-          dest_pos = ( x + ( height - y - 1 ) * width ) << 2;
-          b = data[ src_pos ];
-          g = data[ src_pos + 1 ];
-          r = data[ src_pos + 2 ];
-          if( bpp == 32 ) {
-            a = data[ src_pos + 3 ];
-            src_pos += 4;
-          } else {
-            src_pos += 3;
-          }
-
-          dest[ dest_pos ] = r;
-          dest[ dest_pos + 1 ] = g;
-          dest[ dest_pos + 2 ] = b;
-          dest[ dest_pos + 3 ] = a;
-          if( a != 0xFF ) {
-            isTransparent = true;
-          }
-
-          x = ( x + 1 ) % width;
-          if( !x ) {
-            ++y;
-          }
-        }//for q < num
-      }//not compressed block
-    }//while y < height
-  }//RLE-compression
+  Module::DecodeTGA( memory, imageDataRGBA, isTransparent, width, height );
 
   return Py_BuildValue( "{s:y#,s:i,s:i,s:i}", "data", imageDataRGBA.GetData(), imageDataRGBA.GetLength(), "width", width, "height", height, "length", imageDataRGBA.GetLength() );
 }//tga2rgba
 
+
 PyObject* Module::free( PyObject *self, PyObject *args ) {
+  Module::InitModule();
   for( auto& memory: Module::memoryBlocksList ) {
     delete memory;
   }
@@ -468,7 +655,9 @@ PyObject* Module::free( PyObject *self, PyObject *args ) {
   return Py_BuildValue( "i", 1 );
 }//free
 
-bool Module::GetImageFromArguments( PyObject *args, size_t M_OUT &width, size_t M_OUT &height, Memory M_OUT &rgbaData ) {
+
+bool Module::GetImageFromArguments( PyObject *args, size_t M_OUT &width, size_t M_OUT &height, Memory M_OUT &rgbaData, std::string M_OUT *format ) {
+  Module::InitModule();
   PyObject *parameters;
   if( !PyArg_ParseTuple( args, "O!", &PyDict_Type, &parameters ) ) {
     LOGE( "rgba2dxt1 => need dict as first parameter" );
@@ -496,6 +685,9 @@ bool Module::GetImageFromArguments( PyObject *args, size_t M_OUT &width, size_t 
       size_t length = PyBytes_Size( bytes );
       rgbaData.Alloc( length );
       memcpy( rgbaData.GetData(), PyBytes_AsString( bytes ), rgbaData.GetLength() );
+    } else if( format && name == "format" ) {
+      auto formatItem = PyTuple_GetItem( item, 1 );
+      *format = PyBytes_AsString( formatItem );
     }
   }
 
@@ -504,16 +696,19 @@ bool Module::GetImageFromArguments( PyObject *args, size_t M_OUT &width, size_t 
 
 
 PyObject* Module::rgba2dxt1( PyObject *self, PyObject *args ) {
+  Module::InitModule();
   return Module::DoDXTCompressFromArgs( args, squish::kDxt1 );
 }//rgba2dxt1
 
 
 PyObject* Module::rgba2dxt3( PyObject *self, PyObject *args ) {
+  Module::InitModule();
   return Module::DoDXTCompressFromArgs( args, squish::kDxt3 );
 }//rgba2dxt3
 
 
 PyObject* Module::rgba2dxt5( PyObject *self, PyObject *args ) {
+  Module::InitModule();
   return Module::DoDXTCompressFromArgs( args, squish::kDxt5 );
 }//rgba2dxt5
 
@@ -534,7 +729,6 @@ PyObject* Module::DoDXTCompressFromArgs( PyObject* M_IN args, int format ) {
 bool Module::CompressSquish( PyObject* M_IN args, Memory M_OUT &compressedData, size_t M_OUT &width, size_t M_OUT &height, int format ) {
   Memory rgbaData;
   GetImageFromArguments( args, width, height, rgbaData );
-  //LOGI( "image size[%dx%d] length[%d]", width, height, rgbaData.GetLength() );
 
   if( width % 4 || height % 4 ) {
     LOGE( "Bad image size[%dx%d]: must be multiplies by 4", width, height );
@@ -552,223 +746,79 @@ bool Module::CompressSquish( PyObject* M_IN args, Memory M_OUT &compressedData, 
 
 const int ImgJpg::c_JPEGInputBufferSize = 4096;
 
-// наша функция обработки ошибок
-void ImgJpg::JPEGErrorExit(j_common_ptr cinfo)
-{
-    // получаем ссылочку на нашу структуру
-  ImgJpg::_gImporterJPEGError* myerr = (ImgJpg::_gImporterJPEGError*)cinfo->err;
-    // выводим сообщение об ошибке (наверное можно убрать)
-    (*cinfo->err->output_message)(cinfo);
-    // делаем прыжок на очистку данных и ретурн ошибки
-    longjmp(myerr->setjmp_buffer, 1);
-}
+void ImgJpg::JPEGErrorExit( j_common_ptr cinfo ) {
+  ImgJpg::_gImporterJPEGError* myerr = ( ImgJpg::_gImporterJPEGError* ) cinfo->err;
+  ( *cinfo->err->output_message )( cinfo );
+  longjmp( myerr->setjmp_buffer, 1 );
+}//JPEGErrorExit
 
-/*
-struct _gImporterJPEGSourcegFile
-{
-    jpeg_source_mgr  pub;    // ссылочка на стандартный менеджер
-    MemoryReader      *file;  // открытый файл
-    JOCTET    *buffer;  // буфер данных
-    bool      sof;    // признак того, что файл только что открыли
-};
-*/
-
-struct _gImporterJPEGSourcegMemoryReader
-{
-    jpeg_source_mgr  pub;    // ссылочка на стандартный менеджер
-    MemoryReader *file;  // открытый 'файл'
-    JOCTET    *buffer;  // буфер данных
-    bool      sof;    // признак того, что файл только что открыли
+struct _gImporterJPEGSourcegMemoryReader {
+    jpeg_source_mgr pub;
+    MemoryReader *file;
+    JOCTET *buffer;
+    bool sof;
 };
 
-// вызывается, когда переменная bytes_in_buffer достигает 0 и возникает
-// необходимость в новой порции информации. возвращает TRUE, если буфер
-// перезаполнен успешно, и FALSE если произошла ошибка ввода/вывода.
-/*
-boolean JPEGFillInputBuffergFile(j_decompress_ptr cinfo)
-{
-  _gImporterJPEGSourcegFile* src = (_gImporterJPEGSourcegFile*)cinfo->src;
-  // читаем кусками по ImgJpg::c_JPEGInputBufferSize байт
-  size_t nbytes = src->file->Read(src->buffer, sizeof(JOCTET), ImgJpg::c_JPEGInputBufferSize);
-  // если мы ничего не считали :(
-  if (nbytes <= 0) {
-    if ( src->sof )  return(FALSE); // блин, нам дали пустой файл - заорем "нехорошо" :)
-    // если уже читали до этого, то вставляем в буфер инфу о конце файла
-    src->buffer[0] = (JOCTET) 0xFF;
-    src->buffer[1] = (JOCTET) JPEG_EOI;
+boolean JPEGFillInputBuffergMemoryReader( j_decompress_ptr cinfo ) {
+  _gImporterJPEGSourcegMemoryReader* src = ( _gImporterJPEGSourcegMemoryReader* ) cinfo->src;
+  size_t nbytes = src->file->Read( src->buffer, sizeof( JOCTET ), ImgJpg::c_JPEGInputBufferSize );
+  if( nbytes <= 0 ) {
+    if( src->sof ) {
+      return FALSE;
+    }
+    src->buffer[ 0 ] = ( JOCTET ) 0xFF;
+    src->buffer[ 1 ] = ( JOCTET ) JPEG_EOI;
     nbytes = 2;
   }
 
-  // загоняем инфу в буфер, и размер скока прочли
   src->pub.next_input_byte = src->buffer;
   src->pub.bytes_in_buffer = nbytes;
-  src->sof = false;  // файл не пустой, пронесло :)))
-  // возвращаем успешное выполнение операции
-  return(TRUE);
-}
-*/
+  src->sof = false;
+  return TRUE;
+}//JPEGFillInputBuffergMemoryReader
 
-boolean JPEGFillInputBuffergMemoryReader(j_decompress_ptr cinfo)
-{
-  _gImporterJPEGSourcegMemoryReader* src = (_gImporterJPEGSourcegMemoryReader*)cinfo->src;
-  // читаем кусками по ImgJpg::c_JPEGInputBufferSize байт
-  size_t nbytes = src->file->Read(src->buffer, sizeof(JOCTET), ImgJpg::c_JPEGInputBufferSize);
-  // если мы ничего не считали :(
-  if (nbytes <= 0) {
-    if ( src->sof )  return(FALSE); // блин, нам дали пустой файл - заорем "нехорошо" :)
-    // если уже читали до этого, то вставляем в буфер инфу о конце файла
-    src->buffer[0] = (JOCTET) 0xFF;
-    src->buffer[1] = (JOCTET) JPEG_EOI;
-    nbytes = 2;
-  }
-
-  // загоняем инфу в буфер, и размер скока прочли
-  src->pub.next_input_byte = src->buffer;
-  src->pub.bytes_in_buffer = nbytes;
-  src->sof = false;  // файл не пустой, пронесло :)))
-  // возвращаем успешное выполнение операции
-  return(TRUE);
-}
-
-// инициализация источника. вызывается до того, как какая-нибудь информация
-// будет из него прочтена.
-/*
-void JPEGInitSourcegFile(j_decompress_ptr cinfo)
-{
-	_gImporterJPEGSourcegFile* src = (_gImporterJPEGSourcegFile*)cinfo->src;
-	// говорим, шо файл тока шо открыт, выдыруг он пустой? :)
+void JPEGInitSourcegMemoryReader( j_decompress_ptr cinfo ) {
+	_gImporterJPEGSourcegMemoryReader* src = ( _gImporterJPEGSourcegMemoryReader* ) cinfo->src;
 	src->sof = true;
-}
-*/
+}//JPEGInitSourcegMemoryReader
 
-void JPEGInitSourcegMemoryReader(j_decompress_ptr cinfo)
-{
-	_gImporterJPEGSourcegMemoryReader* src = (_gImporterJPEGSourcegMemoryReader*)cinfo->src;
-	// говорим, шо файл тока шо открыт, выдыруг он пустой? :)
-	src->sof = true;
-}
-
-// происходит, когда необходимо пропустить num_bytes. в случае опустошения
-// буфера, его необходимо перезагрузить.
-/*
-void JPEGSkipInputDatagFile(j_decompress_ptr cinfo, long num_bytes)
-{
-	_gImporterJPEGSourcegFile* src = (_gImporterJPEGSourcegFile*)cinfo->src;
-	// если нужно снести 0 байт :) обижено уходим
-	if (num_bytes <= 0) return;
-	// выкидываем инфу из буфера и перегружаем его, пока num_bytes не станет
-	// меньше размера буфера
-	while (num_bytes > (long) src->pub.bytes_in_buffer) {
-		num_bytes -= (long) src->pub.bytes_in_buffer;
-		JPEGFillInputBuffergFile(cinfo);
-	}
-	// а теперь просто правильно настраиваем указатели на оставшуюся часть
-	src->pub.next_input_byte += (size_t) num_bytes;
-	src->pub.bytes_in_buffer -= (size_t) num_bytes;
-}
-*/
-
-void JPEGSkipInputDatagMemoryReader(j_decompress_ptr cinfo, long num_bytes)
-{
-	_gImporterJPEGSourcegMemoryReader* src = (_gImporterJPEGSourcegMemoryReader*)cinfo->src;
-	// если нужно снести 0 байт :) обижено уходим
-	if (num_bytes <= 0) return;
-	// выкидываем инфу из буфера и перегружаем его, пока num_bytes не станет
-	// меньше размера буфера
-	while (num_bytes > (long) src->pub.bytes_in_buffer) {
-		num_bytes -= (long) src->pub.bytes_in_buffer;
-		JPEGFillInputBuffergMemoryReader(cinfo);
-	}
-	// а теперь просто правильно настраиваем указатели на оставшуюся часть
-	src->pub.next_input_byte += (size_t) num_bytes;
-	src->pub.bytes_in_buffer -= (size_t) num_bytes;
-}
-
-// убить ресурс. вызывается функцией jpeg_finish_decompress когда все данные будут
-// прочтены. у нас ничего сносить не надо.
-void JPEGTermSource(j_decompress_ptr cinfo) { }
-
-/*
-void JPEGStdioSrcgFile(j_decompress_ptr cinfo, MemoryReader* file)
-{
-  _gImporterJPEGSourcegFile* src = 0;
-  // смотрим, выделена ли память под JPEG-декомпрессор менеджер?
-  // возможна ситуация, когда происходит одновременное обращение к источнику
-  // от нескольких библиотек
-  if (cinfo->src == 0) {
-    // выделим память под наш менеджер, и установим на него указатель глобальной структуры
-    // библиотеки. так как я использую менеджер памяти библиотеки JPEG то позаботится об
-    // освобождении она сама. JPOOL_PERMANENT - означает что эта память выделяется на все
-    // время работы с библиотекой
-    cinfo->src = (struct jpeg_source_mgr *) (*cinfo->mem->alloc_small) 
-      ((j_common_ptr) cinfo, JPOOL_PERMANENT, sizeof(_gImporterJPEGSourcegFile));
-    src = (_gImporterJPEGSourcegFile*) cinfo->src;
-    // выделяю память для буффера данных, прочитанных из файла
-    src->buffer = (JOCTET*) (*cinfo->mem->alloc_small) 
-      ((j_common_ptr) cinfo, JPOOL_PERMANENT, ImgJpg::c_JPEGInputBufferSize * sizeof(JOCTET));
-    memset(src->buffer, 0, ImgJpg::c_JPEGInputBufferSize * sizeof(JOCTET));
+void JPEGSkipInputDatagMemoryReader( j_decompress_ptr cinfo, long num_bytes ) {
+	_gImporterJPEGSourcegMemoryReader* src = ( _gImporterJPEGSourcegMemoryReader* ) cinfo->src;
+	if( num_bytes <= 0 ) {
+    return;
   }
-  // для краткости - сестры таланта
-  src = (_gImporterJPEGSourcegFile*)cinfo->src;
-  // настраиваем обработчики событий на наши функции
-  src->pub.init_source = JPEGInitSourcegFile;
-  src->pub.fill_input_buffer = JPEGFillInputBuffergFile;
-  src->pub.skip_input_data = JPEGSkipInputDatagFile;
-  src->pub.resync_to_restart = jpeg_resync_to_restart; // use default method
-  src->pub.term_source = JPEGTermSource;
-  // теперь заполняем поля нашей структуры
-  src->file = file;
-  // настраиваем указатели на буфера
-  src->pub.bytes_in_buffer = 0;  // forces fill_input_buffer on first read
-  src->pub.next_input_byte = 0;  // until buffer loaded
-}
-*/
+	while( num_bytes > ( long ) src->pub.bytes_in_buffer ) {
+		num_bytes -= ( long ) src->pub.bytes_in_buffer;
+		JPEGFillInputBuffergMemoryReader( cinfo );
+	}
+	src->pub.next_input_byte += ( size_t ) num_bytes;
+	src->pub.bytes_in_buffer -= ( size_t ) num_bytes;
+}//JPEGSkipInputDatagMemoryReader
 
+void JPEGTermSource( j_decompress_ptr cinfo ) { }
 
-void ImgJpg::JPEGStdioSrcgMemoryReader(j_decompress_ptr cinfo, MemoryReader* file)
-{
-  _gImporterJPEGSourcegMemoryReader * src = 0;
-  // смотрим, выделена ли память под JPEG-декомпрессор менеджер?
-  // возможна ситуация, когда происходит одновременное обращение к источнику
-  // от нескольких библиотек
-  if (cinfo->src == 0) {
-    // выделим память под наш менеджер, и установим на него указатель глобальной структуры
-    // библиотеки. так как я использую менеджер памяти библиотеки JPEG то позаботится об
-    // освобождении она сама. JPOOL_PERMANENT - означает что эта память выделяется на все
-    // время работы с библиотекой
-    cinfo->src = (struct jpeg_source_mgr *) (*cinfo->mem->alloc_small) 
-      ((j_common_ptr) cinfo, JPOOL_PERMANENT, sizeof(_gImporterJPEGSourcegMemoryReader));
-    src = (_gImporterJPEGSourcegMemoryReader*) cinfo->src;
-    // выделяю память для буффера данных, прочитанных из файла
-    src->buffer = (JOCTET*) (*cinfo->mem->alloc_small) 
-      ((j_common_ptr) cinfo, JPOOL_PERMANENT, ImgJpg::c_JPEGInputBufferSize * sizeof(JOCTET));
-    memset(src->buffer, 0, ImgJpg::c_JPEGInputBufferSize * sizeof(JOCTET));
+void ImgJpg::JPEGStdioSrcgMemoryReader( j_decompress_ptr cinfo, MemoryReader* file ) {
+  _gImporterJPEGSourcegMemoryReader *src = 0;
+  if( cinfo->src == 0 ) {
+    cinfo->src = ( struct jpeg_source_mgr * ) ( *cinfo->mem->alloc_small ) 
+      ( ( j_common_ptr ) cinfo, JPOOL_PERMANENT, sizeof( _gImporterJPEGSourcegMemoryReader ) );
+    src = ( _gImporterJPEGSourcegMemoryReader* ) cinfo->src;
+    src->buffer = ( JOCTET* ) ( *cinfo->mem->alloc_small ) 
+      ( ( j_common_ptr ) cinfo, JPOOL_PERMANENT, ImgJpg::c_JPEGInputBufferSize * sizeof( JOCTET ) );
+    memset( src->buffer, 0, ImgJpg::c_JPEGInputBufferSize * sizeof( JOCTET ) );
   }
-  // для краткости - сестры таланта
-  src = (_gImporterJPEGSourcegMemoryReader*)cinfo->src;
-  // настраиваем обработчики событий на наши функции
+  src = ( _gImporterJPEGSourcegMemoryReader* ) cinfo->src;
   src->pub.init_source = JPEGInitSourcegMemoryReader;
   src->pub.fill_input_buffer = JPEGFillInputBuffergMemoryReader;
   src->pub.skip_input_data = JPEGSkipInputDatagMemoryReader;
-  src->pub.resync_to_restart = jpeg_resync_to_restart; // use default method
+  src->pub.resync_to_restart = jpeg_resync_to_restart;
   src->pub.term_source = JPEGTermSource;
-  // теперь заполняем поля нашей структуры
   src->file = file;
-  // настраиваем указатели на буфера
-  src->pub.bytes_in_buffer = 0;  // forces fill_input_buffer on first read
-  src->pub.next_input_byte = 0;  // until buffer loaded
-}
+  src->pub.bytes_in_buffer = 0;
+  src->pub.next_input_byte = 0;
+}//JPEGStdioSrcgMemoryReader
 
-/*
-void ImgPng::PNGReadFunctiongFile( png_structp png_ptr, png_bytep data, png_size_t length )
-{
-  File *file = ( File* ) png_get_io_ptr( png_ptr );
-  file->Read( data, Dword( length ) );
-}
-*/
-
-void ImgPng::PNGReadFunctiongMemoryReader( png_structp png_ptr, png_bytep data, png_size_t length )
-{
+void ImgPng::PNGReadFunctiongMemoryReader( png_structp png_ptr, png_bytep data, png_size_t length ) {
   MemoryReader *file = ( MemoryReader* ) png_get_io_ptr( png_ptr );
   file->Read( data, long( length ) );
-}
+}//PNGReadFunctiongMemoryReader

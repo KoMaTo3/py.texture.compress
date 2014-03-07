@@ -14,8 +14,17 @@ extern "C" {
 #include <stdint.h>
 #include "tools.h"
 #include "memoryreader.h"
+#include <map>
 
 class Memory;
+
+enum MODULE_IMAGE_TYPES_LIST {
+  MODULE_IMAGE_TYPE_UNKNOWN = 0,
+  MODULE_IMAGE_TYPE_BMP     = 1,
+  MODULE_IMAGE_TYPE_TGA     = 2,
+  MODULE_IMAGE_TYPE_JPG     = 3,
+  MODULE_IMAGE_TYPE_PNG     = 4,
+};
 
 class Module {
 public:
@@ -26,26 +35,34 @@ public:
   static PyObject* jpg2rgba( PyObject *self, PyObject *args );
   static PyObject* png2rgba( PyObject *self, PyObject *args );
   static PyObject* bmp2rgba( PyObject *self, PyObject *args );
+  
+  static PyObject* decode2rgba( PyObject *self, PyObject *args );
+  static PyObject* picture2dxt( PyObject *self, PyObject *args );
 
   static PyObject* rgba2dxt1( PyObject *self, PyObject *args );
   static PyObject* rgba2dxt3( PyObject *self, PyObject *args );
   static PyObject* rgba2dxt5( PyObject *self, PyObject *args );
 
+  static PyObject* supportedFormats( PyObject *self, PyObject *args );
+
 private:
   typedef std::deque< Memory* > MemoryList;
+  typedef bool decodeFuncHandlerType( Memory &inBuffer, Memory &outBuffer, bool &isTransparent, size_t &outWidth, size_t &outHeight );
+
   static MemoryList memoryBlocksList;
+  static std::map< std::string, int > formatList;
+  static bool isInitialized;
 
   static bool CompressSquish( PyObject* M_IN args, Memory M_OUT &compressedData, size_t M_OUT &width, size_t M_OUT &height, int format );
   static PyObject* DoDXTCompressFromArgs( PyObject* M_IN args, int format );
-  static bool GetImageFromArguments( PyObject* M_IN args, size_t M_OUT &width, size_t M_OUT &height, Memory M_OUT &rgbaData );
-};
-
-enum MODULE_COMPRESSION_IMAGE_TYPE {
-  MODULE_COMPRESSION_IMAGE_TYPE_RGBA = 0,
-  MODULE_COMPRESSION_IMAGE_TYPE_RGB_S3TC_DXT1 = 1,
-  MODULE_COMPRESSION_IMAGE_TYPE_RGBA_S3TC_DXT1 = 2,
-  MODULE_COMPRESSION_IMAGE_TYPE_RGBA_S3TC_DXT3 = 3,
-  MODULE_COMPRESSION_IMAGE_TYPE_RGBA_S3TC_DXT5 = 4,
+  static bool GetImageFromArguments( PyObject* M_IN args, size_t M_OUT &width, size_t M_OUT &height, Memory M_OUT &rgbaData, std::string M_OUT *format = NULL );
+  static MODULE_IMAGE_TYPES_LIST GetImageType( Memory &memory );
+  static void InitModule();
+  static bool DecodeBMP( Memory &inBuffer, Memory &outBuffer, bool &isTransparent, size_t &outWidth, size_t &outHeight );
+  static bool DecodeTGA( Memory &inBuffer, Memory &outBuffer, bool &isTransparent, size_t &outWidth, size_t &outHeight );
+  static bool DecodeJPG( Memory &inBuffer, Memory &outBuffer, bool &isTransparent, size_t &outWidth, size_t &outHeight );
+  static bool DecodePNG( Memory &inBuffer, Memory &outBuffer, bool &isTransparent, size_t &outWidth, size_t &outHeight );
+  static void EncodeDXT( Memory &inBuffer, size_t width, size_t height, Memory &outBuffer, int dxtFormat );
 };
 
 
