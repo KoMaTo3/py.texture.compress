@@ -25,6 +25,9 @@
     <Filter Include="zlib">
       <UniqueIdentifier>{3e5bca01-5b79-41f7-878d-798f8eac5cb2}</UniqueIdentifier>
     </Filter>
+    <Filter Include="etc1">
+      <UniqueIdentifier>{34b73eb5-297b-4817-917f-717d7e754857}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\module.cpp">
@@ -339,6 +342,9 @@
     <ClCompile Include="src\jpeglib\cdjpeg.c">
       <Filter>jpeglib</Filter>
     </ClCompile>
+    <ClCompile Include="src\etc1\rg_etc1.cpp">
+      <Filter>etc1</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\module.h">
@@ -478,6 +484,9 @@
     </ClInclude>
     <ClInclude Include="src\memoryreader.h">
       <Filter>Заголовочные файлы</Filter>
+    </ClInclude>
+    <ClInclude Include="src\etc1\rg_etc1.h">
+      <Filter>etc1</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

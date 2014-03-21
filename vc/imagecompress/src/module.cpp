@@ -83,6 +83,89 @@ PyObject* Module::picture2dxt( PyObject *self, PyObject *args ) {
 }//picture2dxt
 
 
+PyObject* Module::picture2etc1( PyObject *self, PyObject *args ) {
+  Module::InitModule();
+  size_t width, height;
+  bool isTransparent;
+  Memory fileData, imageDataRGBA, imageDataETC1;
+
+  char *fileName;
+  int quality;
+  if( !PyArg_ParseTuple( args, "si", &fileName, &quality ) ) {
+    LOGE( "picture2etc1 => bad parameters, need: '/path/to/file/name'" );
+    return NULL;
+  }
+
+  FileManagerType fileManager;
+  if( !fileManager.FileExists( fileName ) ) {
+    LOGE( "File '%s' not fount", fileName );
+    return NULL;
+  }
+  fileManager.GetFile( fileName, fileData );
+
+  decodeFuncHandlerType *decodeFuncHandler = NULL;
+
+  auto imageType = Module::GetImageType( fileData );
+  switch( imageType ) {
+  case MODULE_IMAGE_TYPE_BMP:
+    decodeFuncHandler = Module::DecodeBMP;
+    break;
+  case MODULE_IMAGE_TYPE_TGA:
+    decodeFuncHandler = Module::DecodeTGA;
+    break;
+  case MODULE_IMAGE_TYPE_JPG:
+    decodeFuncHandler = Module::DecodeJPG;
+    break;
+  case MODULE_IMAGE_TYPE_PNG:
+    decodeFuncHandler = Module::DecodePNG;
+    break;
+  default:
+    LOGE( "Unknown format" );
+    return NULL;
+  }
+
+  if( !decodeFuncHandler || !decodeFuncHandler( fileData, imageDataRGBA, isTransparent, width, height ) ) {
+    return NULL;
+  }
+
+  Module::EncodeETC1( imageDataRGBA, width, height, imageDataETC1, quality );
+  return Py_BuildValue( "{s:y#,s:i,s:i,s:i}", "data", imageDataETC1.GetData(), imageDataETC1.GetLength(), "width", width, "height", height, "length", imageDataETC1.GetLength() );
+}//picture2etc1
+
+
+void Module::EncodeETC1( Memory &inBuffer, size_t width, size_t height, Memory &outBuffer, int quality ) {
+  size_t
+    resultBufferSize = ( width * height ) >> 1,
+    blocksPerRow = width >> 2,
+    blocksPerColumn = height >> 2;
+  Memory memBlock( 4 * 4 * 4 );
+  outBuffer.Alloc( resultBufferSize );
+  uint8_t
+    *srcData = memBlock.GetData(),
+    *destData = outBuffer.GetData();
+  rg_etc1::etc1_pack_params packParams;
+
+  packParams.m_dithering = false;
+  switch( quality ) {
+  case 0: packParams.m_quality = rg_etc1::cLowQuality; break;
+  case 1: packParams.m_quality = rg_etc1::cMediumQuality; break;
+  case 2: packParams.m_quality = rg_etc1::cHighQuality; break;
+  default: packParams.m_quality = rg_etc1::cLowQuality; break; LOGE( "Module::EncodeETC1 => quality[%d] is unavailable", quality ); break;
+  }
+
+  rg_etc1::pack_etc1_block_init();
+  for( size_t blockRow = 0; blockRow < blocksPerColumn; ++blockRow ) {
+    for( size_t blockColumn = 0; blockColumn < blocksPerRow; ++blockColumn ) {
+      for( size_t row = 0; row < 4; ++row ) {
+        memcpy( srcData + row * 4 * 4, inBuffer.GetData() + 4 * ( blockColumn * 4 + blockRow * width ), 4 * 4 );
+      }
+      rg_etc1::pack_etc1_block( destData, ( unsigned int* ) srcData, packParams );
+      destData += 8;
+    }
+  }
+}//EncodeETC1
+
+
 void Module::EncodeDXT( Memory &inBuffer, size_t width, size_t height, Memory &outBuffer, int dxtFormat ) {
   const size_t resultSize = squish::GetStorageRequirements( width, height, dxtFormat );
   outBuffer.Alloc( resultSize );
@@ -656,7 +739,7 @@ PyObject* Module::free( PyObject *self, PyObject *args ) {
 }//free
 
 
-bool Module::GetImageFromArguments( PyObject *args, size_t M_OUT &width, size_t M_OUT &height, Memory M_OUT &rgbaData, std::string M_OUT *format ) {
+bool Module::GetImageFromArguments( PyObject *args, size_t M_OUT &width, size_t M_OUT &height, Memory M_OUT &rgbaData, std::string M_OUT *format, int M_OUT *quality ) {
   Module::InitModule();
   PyObject *parameters;
   if( !PyArg_ParseTuple( args, "O!", &PyDict_Type, &parameters ) ) {
@@ -688,6 +771,9 @@ bool Module::GetImageFromArguments( PyObject *args, size_t M_OUT &width, size_t 
     } else if( format && name == "format" ) {
       auto formatItem = PyTuple_GetItem( item, 1 );
       *format = PyBytes_AsString( formatItem );
+    } else if( quality && name == "quality" ) {
+      auto qualityItem = PyTuple_GetItem( item, 1 );
+      *quality = PyLong_AsLong( qualityItem );
     }
   }
 
@@ -744,6 +830,44 @@ bool Module::CompressSquish( PyObject* M_IN args, Memory M_OUT &compressedData, 
 
 
 
+PyObject* Module::rgba2etc1( PyObject *self, PyObject *args ) {
+  Module::InitModule();
+  return Module::DoETC1CompressFromArgs( args );
+}//rgba2etc1
+
+
+PyObject* Module::DoETC1CompressFromArgs( PyObject* M_IN args ) {
+  Memory compressedData;
+  size_t
+    width = 0,
+    height = 0;
+  int quality = 0;
+  if( Module::CompressETC1( args, compressedData, width, height, quality ) ) {
+    return Py_BuildValue( "{s:y#,s:i,s:i,s:i}", "data", compressedData.GetData(), compressedData.GetLength(), "width", width, "height", height, "length", compressedData.GetLength() );
+  }
+
+  return Py_BuildValue( "i", 0 );
+}//DoETC1CompressFromArgs
+
+
+bool Module::CompressETC1( PyObject* M_IN args, Memory M_OUT &compressedData, size_t M_OUT &width, size_t M_OUT &height, int M_OUT &quality ) {
+  Memory rgbaData;
+  GetImageFromArguments( args, width, height, rgbaData, NULL, &quality );
+
+  if( width % 4 || height % 4 ) {
+    LOGE( "Bad image size[%dx%d]: must be multiplies by 4", width, height );
+    return false;
+  }
+
+  Module::EncodeETC1( rgbaData, width, height, compressedData, quality );
+
+  return true;
+}//CompressETC1
+
+
+
+///////////////////////////////////////////////
+///////////////////////////////////////////////
 const int ImgJpg::c_JPEGInputBufferSize = 4096;
 
 void ImgJpg::JPEGErrorExit( j_common_ptr cinfo ) {

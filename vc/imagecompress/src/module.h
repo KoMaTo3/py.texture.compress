@@ -9,6 +9,8 @@ extern "C" {
 #include "setjmp.h"
 #include "pnglib/png.h"
 
+#include "etc1/rg_etc1.h"
+
 #include "Python.h"
 #include <deque>
 #include <stdint.h>
@@ -38,10 +40,12 @@ public:
   
   static PyObject* decode2rgba( PyObject *self, PyObject *args );
   static PyObject* picture2dxt( PyObject *self, PyObject *args );
+  static PyObject* picture2etc1( PyObject *self, PyObject *args );
 
   static PyObject* rgba2dxt1( PyObject *self, PyObject *args );
   static PyObject* rgba2dxt3( PyObject *self, PyObject *args );
   static PyObject* rgba2dxt5( PyObject *self, PyObject *args );
+  static PyObject* rgba2etc1( PyObject *self, PyObject *args );
 
   static PyObject* supportedFormats( PyObject *self, PyObject *args );
 
@@ -54,8 +58,10 @@ private:
   static bool isInitialized;
 
   static bool CompressSquish( PyObject* M_IN args, Memory M_OUT &compressedData, size_t M_OUT &width, size_t M_OUT &height, int format );
+  static bool CompressETC1( PyObject* M_IN args, Memory M_OUT &compressedData, size_t M_OUT &width, size_t M_OUT &height, int M_OUT &quality );
   static PyObject* DoDXTCompressFromArgs( PyObject* M_IN args, int format );
-  static bool GetImageFromArguments( PyObject* M_IN args, size_t M_OUT &width, size_t M_OUT &height, Memory M_OUT &rgbaData, std::string M_OUT *format = NULL );
+  static PyObject* DoETC1CompressFromArgs( PyObject* M_IN args );
+  static bool GetImageFromArguments( PyObject* M_IN args, size_t M_OUT &width, size_t M_OUT &height, Memory M_OUT &rgbaData, std::string M_OUT *format = NULL, int M_OUT *quality = 0 );
   static MODULE_IMAGE_TYPES_LIST GetImageType( Memory &memory );
   static void InitModule();
   static bool DecodeBMP( Memory &inBuffer, Memory &outBuffer, bool &isTransparent, size_t &outWidth, size_t &outHeight );
@@ -63,6 +69,7 @@ private:
   static bool DecodeJPG( Memory &inBuffer, Memory &outBuffer, bool &isTransparent, size_t &outWidth, size_t &outHeight );
   static bool DecodePNG( Memory &inBuffer, Memory &outBuffer, bool &isTransparent, size_t &outWidth, size_t &outHeight );
   static void EncodeDXT( Memory &inBuffer, size_t width, size_t height, Memory &outBuffer, int dxtFormat );
+  static void EncodeETC1( Memory &inBuffer, size_t width, size_t height, Memory &outBuffer, int quality );
 };
 
 

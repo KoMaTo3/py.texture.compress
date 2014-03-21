@@ -15,8 +15,10 @@ static PyMethodDef ModuleMethods[] = {
   { "rgba2dxt1",  Module::rgba2dxt1, METH_VARARGS, "Compress RGBA data as DXT1" },
   { "rgba2dxt3",  Module::rgba2dxt3, METH_VARARGS, "Compress RGBA data as DXT3" },
   { "rgba2dxt5",  Module::rgba2dxt5, METH_VARARGS, "Compress RGBA data as DXT5" },
+  { "rgba2etc1",  Module::rgba2etc1, METH_VARARGS, "Compress RGBA data as ETC1" },
   { "supportedFormats",  Module::supportedFormats, METH_VARARGS, "List of allowed pictures formats" },
   { "picture2dxt",  Module::picture2dxt, METH_VARARGS, "Compress picture file to DXT1/DXT3/DXT5 format" },
+  { "picture2etc1",  Module::picture2etc1, METH_VARARGS, "Compress picture file to ETC1 format" },
   { "free",  Module::free, METH_VARARGS, "Free reserved module memory" },
   { NULL, NULL, 0, NULL }
 };

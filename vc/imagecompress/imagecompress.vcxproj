@@ -83,6 +83,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\etc1\rg_etc1.cpp" />
     <ClCompile Include="src\filemanager.cpp" />
     <ClCompile Include="src\initmodule.cpp" />
     <ClCompile Include="src\jpeglib\cdjpeg.c" />
@@ -189,6 +190,7 @@
     <ClCompile Include="src\zlib\zutil.c" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\etc1\rg_etc1.h" />
     <ClInclude Include="src\filemanager.h" />
     <ClInclude Include="src\jpeglib\cderror.h" />
     <ClInclude Include="src\jpeglib\cdjpeg.h" />
